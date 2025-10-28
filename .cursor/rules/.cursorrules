@@ -1,0 +1,627 @@
+# Reglas de Cursor para Proyecto NestJS + PostgreSQL + TypeORM
+
+## Contexto del Proyecto
+Este proyecto está basado en NestJS con PostgreSQL, TypeORM, JWT Authentication y Swagger.
+El proyecto original: https://github.com/profe-gus/2025-2-nest-postgres.git
+
+## Arquitectura y Estructura
+
+### Estructura de Carpetas
+Sigue esta estructura de carpetas para cada módulo:
+```
+src/
+├── [modulo]/
+│   ├── dto/
+│   │   ├── create-[modulo].dto.ts
+│   │   ├── update-[modulo].dto.ts
+│   │   └── pagination.dto.ts (si aplica)
+│   ├── entities/
+│   │   └── [entidad].entity.ts
+│   ├── [modulo].controller.ts
+│   ├── [modulo].service.ts
+│   └── [modulo].module.ts
+├── auth/
+│   ├── decorators/
+│   ├── dto/
+│   ├── entities/
+│   ├── enums/
+│   ├── guards/
+│   ├── interfaces/
+│   └── strategies/
+├── seed/
+└── main.ts
+```
+
+## Convenciones de Código
+
+### 1. Entidades (TypeORM)
+
+**SIEMPRE usa estos patrones:**
+```typescript
+import { BeforeInsert, BeforeUpdate, Column, Entity, PrimaryGeneratedColumn, OneToMany, ManyToOne } from 'typeorm';
+import { ApiProperty } from '@nestjs/swagger';
+
+@Entity()
+export class [NombreEntidad] {
+    @ApiProperty({
+        example: '38c8f3fe-xxxx-xxxx-81ff-77fe9846f1dd',
+        description: '[Descripción del ID]',
+        uniqueItems: true
+    })
+    @PrimaryGeneratedColumn('uuid')
+    id: string;
+
+    @ApiProperty({
+        example: 'Valor de ejemplo',
+        description: 'Descripción del campo'
+    })
+    @Column('text')
+    campo: string;
+
+    @Column({
+        type: 'int',
+        nullable: true
+    })
+    campoNumerico?: number;
+
+    @Column({
+        type: 'text',
+        unique: true
+    })
+    campoUnico: string;
+
+    @Column({
+        type: 'text',
+        array: true
+    })
+    campoArray: string[];
+
+    // Hooks para transformaciones
+    @BeforeInsert()
+    checkFieldsBeforeInsert() {
+        // Transformaciones antes de insertar
+    }
+
+    @BeforeUpdate()
+    checkFieldsBeforeUpdate() {
+        // Transformaciones antes de actualizar
+    }
+}
+```
+
+**Reglas para entidades:**
+- SIEMPRE usa `uuid` como tipo de PrimaryGeneratedColumn
+- SIEMPRE agrega decoradores @ApiProperty para Swagger
+- SIEMPRE transforma emails a lowercase y trim en hooks
+- Usa `nullable: true` para campos opcionales
+- Usa `default` para valores por defecto
+- Define relaciones con cascade y eager según necesidad
+
+### 2. DTOs (Data Transfer Objects)
+
+**Estructura de CreateDTO:**
+```typescript
+import { IsString, IsNumber, IsEmail, IsIn, IsArray, IsPositive, IsOptional } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+
+export class Create[Entidad]Dto {
+    @ApiProperty({
+        example: 'Valor ejemplo',
+        description: 'Descripción'
+    })
+    @IsString()
+    campo: string;
+
+    @ApiProperty()
+    @IsNumber()
+    @IsPositive()
+    @IsOptional()
+    campoOpcional?: number;
+
+    @IsString()
+    @IsEmail()
+    email: string;
+
+    @IsString()
+    @IsIn(['Opcion1', 'Opcion2', 'Opcion3'])
+    campoEnum: string;
+
+    @IsArray()
+    campoArray: string[];
+
+    @IsArray()
+    @IsOptional()
+    relaciones?: RelacionEntity[];
+}
+```
+
+**Estructura de UpdateDTO:**
+```typescript
+import { PartialType } from '@nestjs/mapped-types';
+import { Create[Entidad]Dto } from './create-[entidad].dto';
+
+export class Update[Entidad]Dto extends PartialType(Create[Entidad]Dto) {}
+```
+
+**Estructura de PaginationDTO:**
+```typescript
+import { IsOptional, IsPositive } from 'class-validator';
+import { Type } from 'class-transformer';
+
+export class PaginationDto {
+    @IsOptional()
+    @IsPositive()
+    @Type(() => Number)
+    limit?: number;
+
+    @IsOptional()
+    @IsPositive()
+    @Type(() => Number)
+    offset?: number;
+}
+```
+
+**Reglas para DTOs:**
+- SIEMPRE usa decoradores de class-validator
+- SIEMPRE usa @ApiProperty para documentación Swagger
+- UpdateDto SIEMPRE debe extender PartialType del CreateDto
+- Usa @IsOptional() para campos opcionales
+- Usa @Type(() => Number) para transformación de query params
+- Valida tipos específicos: @IsEmail(), @IsIn(), @IsUUID()
+
+### 3. Controladores
+
+**Estructura estándar:**
+```typescript
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query } from '@nestjs/common';
+import { ApiBearerAuth, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Auth } from 'src/auth/decorators/auth.decorator';
+import { ValidRoles } from 'src/auth/enums/roles.enum';
+
+@ApiTags('[nombre-modulo]')
+@Controller('[nombre-ruta]')
+export class [Nombre]Controller {
+    constructor(private readonly [nombre]Service: [Nombre]Service) {}
+
+    @Post()
+    @ApiResponse({ status: 201, description: 'Recurso creado', type: [Entidad] })
+    @ApiResponse({ status: 400, description: 'Bad Request' })
+    create(@Body() createDto: Create[Entidad]Dto) {
+        return this.[nombre]Service.create(createDto);
+    }
+
+    @Get()
+    findAll(@Query() paginationDto: PaginationDto) {
+        return this.[nombre]Service.findAll(paginationDto);
+    }
+
+    @Get(':term')
+    findOne(@Param('term') term: string) {
+        return this.[nombre]Service.findOne(term);
+    }
+
+    @Patch(':id')
+    @ApiBearerAuth('JWT-auth')
+    @Auth(ValidRoles.admin)
+    update(@Param('id') id: string, @Body() updateDto: Update[Entidad]Dto) {
+        return this.[nombre]Service.update(id, updateDto);
+    }
+
+    @Delete(':id')
+    remove(@Param('id') id: string) {
+        return this.[nombre]Service.remove(id);
+    }
+}
+```
+
+**Reglas para controladores:**
+- SIEMPRE usa @ApiTags para agrupar endpoints en Swagger
+- SIEMPRE documenta responses con @ApiResponse
+- Usa @ApiBearerAuth('JWT-auth') en rutas protegidas
+- Usa @Auth(ValidRoles.[rol]) para control de acceso
+- Usa :term para búsquedas flexibles (id, email, etc.)
+- GET sin parámetros debe aceptar PaginationDto
+
+### 4. Servicios
+
+**Estructura estándar:**
+```typescript
+import { Injectable, NotFoundException, BadRequestException, InternalServerErrorException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+
+@Injectable()
+export class [Nombre]Service {
+    constructor(
+        @InjectRepository([Entidad])
+        private readonly [entidad]Repository: Repository<[Entidad]>,
+    ) {}
+
+    async create(createDto: Create[Entidad]Dto) {
+        try {
+            const [entidad] = this.[entidad]Repository.create(createDto);
+            await this.[entidad]Repository.save([entidad]);
+            return [entidad];
+        } catch (error) {
+            this.handleDBExceptions(error);
+        }
+    }
+
+    async findAll(paginationDto: PaginationDto) {
+        const { limit = 10, offset = 0 } = paginationDto;
+        return this.[entidad]Repository.find({
+            take: limit,
+            skip: offset
+        });
+    }
+
+    async findOne(term: string) {
+        let [entidad]: [Entidad];
+
+        if (isUUID(term)) {
+            [entidad] = await this.[entidad]Repository.findOneBy({ id: term });
+        } else {
+            const queryBuilder = this.[entidad]Repository.createQueryBuilder();
+            [entidad] = await queryBuilder
+                .where('UPPER(campo) = :campo', { 
+                    campo: term.toUpperCase()
+                })
+                .getOne();
+        }
+
+        if (![entidad]) {
+            throw new NotFoundException(`[Entidad] con ${term} no encontrado`);
+        }
+
+        return [entidad];
+    }
+
+    async update(id: string, updateDto: Update[Entidad]Dto) {
+        const [entidad] = await this.[entidad]Repository.preload({
+            id,
+            ...updateDto
+        });
+
+        if (![entidad]) {
+            throw new NotFoundException(`[Entidad] con id ${id} no encontrado`);
+        }
+
+        try {
+            await this.[entidad]Repository.save([entidad]);
+            return [entidad];
+        } catch (error) {
+            this.handleDBExceptions(error);
+        }
+    }
+
+    async remove(id: string) {
+        const [entidad] = await this.findOne(id);
+        await this.[entidad]Repository.remove([entidad]);
+        return { message: '[Entidad] eliminado correctamente' };
+    }
+
+    private handleDBExceptions(error: any) {
+        if (error.code === '23505') {
+            throw new BadRequestException(error.detail);
+        }
+        console.log(error);
+        throw new InternalServerErrorException('Error inesperado, revisar logs');
+    }
+}
+```
+
+**Reglas para servicios:**
+- SIEMPRE maneja excepciones con try-catch
+- Usa método handleDBExceptions para errores de BD
+- findOne debe buscar por ID (UUID) o por otros campos
+- Usa QueryBuilder para búsquedas complejas
+- SIEMPRE usa preload() en updates
+- SIEMPRE valida existencia antes de operaciones
+- Retorna objetos limpios, no el resultado directo de BD
+
+### 5. Módulos
+
+**Estructura estándar:**
+```typescript
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { [Nombre]Service } from './[nombre].service';
+import { [Nombre]Controller } from './[nombre].controller';
+import { [Entidad] } from './entities/[entidad].entity';
+import { AuthModule } from 'src/auth/auth.module';
+
+@Module({
+    imports: [
+        TypeOrmModule.forFeature([
+            [Entidad],
+            // Otras entidades relacionadas
+        ]),
+        AuthModule // Si se necesita autenticación
+    ],
+    controllers: [[Nombre]Controller],
+    providers: [[Nombre]Service],
+    exports: [
+        TypeOrmModule,
+        [Nombre]Service
+    ]
+})
+export class [Nombre]Module {}
+```
+
+**Reglas para módulos:**
+- SIEMPRE importa TypeOrmModule.forFeature con entidades
+- Exporta TypeOrmModule si otros módulos necesitan las entidades
+- Exporta servicios que otros módulos puedan necesitar
+- Importa AuthModule si necesitas autenticación
+
+## Autenticación y Autorización
+
+### Decorador personalizado Auth
+```typescript
+import { UseGuards, applyDecorators } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
+import { RoleProtected } from './role-protected.decorator';
+import { UserRoleGuard } from '../guards/user-role.guard';
+import { ValidRoles } from '../enums/roles.enum';
+
+export function Auth(...roles: ValidRoles[]) {
+    return applyDecorators(
+        RoleProtected(...roles),
+        UseGuards(AuthGuard(), UserRoleGuard)
+    );
+}
+```
+
+### Enum de Roles
+```typescript
+export enum ValidRoles {
+    admin = 'admin',
+    teacher = 'teacher',
+    student = 'student'
+}
+```
+
+**Reglas de autenticación:**
+- Usa @Auth(ValidRoles.[rol]) en controladores
+- Los roles se validan mediante guards personalizados
+- JWT debe configurarse en AuthModule
+- Passwords SIEMPRE se hashean con bcrypt
+
+## Configuración del Proyecto
+
+### main.ts
+```typescript
+import { NestFactory } from '@nestjs/core';
+import { AppModule } from './app.module';
+import { ValidationPipe } from '@nestjs/common';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+
+async function bootstrap() {
+    const app = await NestFactory.create(AppModule);
+    
+    app.setGlobalPrefix('api');
+    
+    app.useGlobalPipes(
+        new ValidationPipe({
+            whitelist: true,
+            forbidNonWhitelisted: true
+        })
+    );
+
+    const config = new DocumentBuilder()
+        .setTitle('API Title')
+        .setDescription('API Description')
+        .setVersion('1.0')
+        .addBearerAuth(
+            {
+                type: 'http',
+                scheme: 'bearer',
+                bearerFormat: 'JWT',
+                name: 'JWT',
+                description: 'Enter jwt token',
+                in: 'header'
+            },
+            'JWT-auth'
+        )
+        .build();
+
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api', app, document);
+
+    await app.listen(process.env.PORT ?? 3000);
+}
+bootstrap();
+```
+
+### app.module.ts
+```typescript
+import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { TypeOrmModule } from '@nestjs/typeorm';
+
+@Module({
+    imports: [
+        ConfigModule.forRoot(),
+        TypeOrmModule.forRoot({
+            type: 'postgres',
+            host: process.env.DB_HOST,
+            port: +process.env.DB_PORT,
+            database: process.env.DB_NAME,
+            username: process.env.DB_USERNAME,
+            password: process.env.DB_PASSWORD,
+            autoLoadEntities: true,
+            synchronize: true // Solo en desarrollo
+        }),
+        // Otros módulos
+    ],
+})
+export class AppModule {}
+```
+
+**Reglas de configuración:**
+- SIEMPRE usa ConfigModule.forRoot() para variables de entorno
+- SIEMPRE usa ValidationPipe global con whitelist y forbidNonWhitelisted
+- SIEMPRE configura Swagger con Bearer Auth
+- synchronize: true SOLO en desarrollo
+
+## Docker y Base de Datos
+
+### docker-compose.yml
+```yaml
+version: '3'
+
+services:
+  db:
+    image: postgres:14.3
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    container_name: postgres_[proyecto]
+    volumes:
+      - ./postgres:/var/lib/postgresql/data
+```
+
+**Reglas de Docker:**
+- Usa PostgreSQL 14.3 o superior
+- Persiste datos con volumen
+- Variables de entorno desde .env
+
+## Variables de Entorno (.env)
+```env
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=nombre_db
+DB_USERNAME=postgres
+DB_PASSWORD=password_seguro
+
+JWT_SECRET=clave_secreta_compleja
+PORT=3000
+```
+
+## Testing
+
+### Configuración Jest
+```json
+{
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "rootDir": "src",
+  "testRegex": ".*\\.spec\\.ts$",
+  "transform": {
+    "^.+\\.(t|j)s$": "ts-jest"
+  },
+  "collectCoverageFrom": ["**/*.(t|j)s"],
+  "coverageDirectory": "../coverage",
+  "testEnvironment": "node"
+}
+```
+
+## Scripts package.json
+```json
+{
+  "start:dev": "nest start --watch",
+  "start:prod": "node dist/main",
+  "build": "nest build",
+  "format": "prettier --write \"src/**/*.ts\"",
+  "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
+  "test": "jest",
+  "test:watch": "jest --watch",
+  "test:cov": "jest --coverage"
+}
+```
+
+## Buenas Prácticas Generales
+
+1. **Nombrado:**
+   - Entidades: PascalCase singular (Student, User)
+   - DTOs: PascalCase con sufijo Dto (CreateStudentDto)
+   - Servicios: camelCase con sufijo Service (studentsService)
+   - Controladores: camelCase con sufijo Controller
+   - Archivos: kebab-case ([nombre].service.ts)
+
+2. **Organización:**
+   - Un archivo por clase/interfaz
+   - Agrupar por funcionalidad (módulos)
+   - Separar concerns: dto, entities, guards, decorators
+
+3. **TypeScript:**
+   - SIEMPRE define tipos explícitos
+   - Usa interfaces para contratos
+   - Usa enums para valores fijos
+   - Evita 'any', usa 'unknown' si es necesario
+
+4. **Seguridad:**
+   - NUNCA commits .env a git
+   - SIEMPRE hashea passwords
+   - Valida TODOS los inputs
+   - Sanitiza datos antes de guardar
+
+5. **Performance:**
+   - Usa paginación en listados
+   - Índices en campos de búsqueda frecuente
+   - Eager loading solo cuando necesario
+   - Cache para queries frecuentes
+
+6. **Documentación:**
+   - SIEMPRE documenta endpoints con Swagger
+   - Ejemplos en @ApiProperty
+   - Comentarios en lógica compleja
+   - README actualizado
+
+7. **Errores:**
+   - Mensajes descriptivos
+   - Logs de errores inesperados
+   - HTTP status codes correctos
+   - No exponer detalles internos
+
+## Comandos NestJS Útiles
+
+```bash
+# Generar recursos completos
+nest g resource [nombre] --no-spec
+
+# Generar módulo
+nest g module [nombre]
+
+# Generar controlador
+nest g controller [nombre] --no-spec
+
+# Generar servicio
+nest g service [nombre] --no-spec
+
+# Generar guard
+nest g guard auth/guards/[nombre] --no-spec
+
+# Generar decorator
+nest g decorator auth/decorators/[nombre] --no-spec
+```
+
+## Checklist para Nuevos Módulos
+
+- [ ] Crear estructura de carpetas (dto, entities)
+- [ ] Definir entidad con decoradores TypeORM y Swagger
+- [ ] Crear DTOs con validaciones
+- [ ] Implementar servicio con CRUD y manejo de errores
+- [ ] Crear controlador con decoradores apropiados
+- [ ] Configurar módulo con imports/exports
+- [ ] Agregar autenticación si es necesario
+- [ ] Documentar con Swagger
+- [ ] Probar todos los endpoints
+- [ ] Actualizar README si hay cambios significativos
+
+## Ejemplo de Flujo Completo
+
+1. **Crear módulo:** `nest g resource products --no-spec`
+2. **Definir entidad** en `entities/product.entity.ts`
+3. **Crear DTOs** en `dto/` con validaciones
+4. **Implementar CRUD** en `products.service.ts`
+5. **Configurar rutas** en `products.controller.ts`
+6. **Agregar al AppModule**
+7. **Probar endpoints** con Swagger/Postman
+8. **Agregar tests** si es necesario
+
+---
+
+**Nota importante:** Este archivo de reglas está diseñado para mantener consistencia con el proyecto base. Adapta según necesidades específicas pero mantén la estructura y convenciones establecidas.
